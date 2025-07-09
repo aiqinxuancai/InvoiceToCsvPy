@@ -1,0 +1,75 @@
+# .github/workflows/create-release.yml
+
+name: Build and Release Python Executable
+
+# 工作流程触发器
+on:
+  # 1. 当一个格式为 v*.*.* (例如 v1.0, v2.1.3) 的标签被推送到仓库时触发
+  push:
+    tags:
+      - 'v*.*.*'
+  # 2. 允许在 GitHub Actions 页面手动触发此工作流程
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    # 指定运行此任务的操作系统，对于 .exe 文件必须是 windows
+    runs-on: windows-latest
+
+    steps:
+      # 第一步：检出你的仓库代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 第二步：设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # 指定你项目所使用的 Python 版本
+          python-version: '3.12'
+
+      # 第三步：安装依赖项
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
+          pip install pyinstaller
+        shell: pwsh
+
+      # 第四步：使用 PyInstaller 打包成 .exe
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller --onefile --noconfirm "InvoiceToCsvPy/InvoiceToCsvPy.py"
+        shell: pwsh
+
+      # 第五步：在输出目录中创建额外的文件和文件夹
+      # PyInstaller 默认将可执行文件输出到 dist 目录
+      - name: Prepare Release Directory
+        run: |
+          New-Item -Path "dist/invoices" -ItemType Directory
+          New-Item -Path "dist/moonshot.txt" -ItemType File
+        shell: pwsh
+
+      # 第六步：打包发布内容为 ZIP 文件
+      - name: Package Release Asset
+        run: |
+          $asset_name = "InvoiceToCsvPy-windows-${{ github.ref_name }}.zip"
+          Compress-Archive -Path dist\* -DestinationPath $asset_name
+          echo "ASSET_NAME=$asset_name" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # 第七步：创建 GitHub Release 并上传 ZIP 文件
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 从上一步获取要上传的文件名
+          files: ${{ env.ASSET_NAME }}
+          # 使用标签名作为 Release 的标题
+          name: Release ${{ github.ref_name }}
+          # Release 的描述内容
+          body: |
+            Automated release for version ${{ github.ref_name }}.
+            Contains the executable for Windows and necessary files.
+        # GITHUB_TOKEN 是由 GitHub Actions 自动提供的，用于授权
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
