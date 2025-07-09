@@ -19,7 +19,7 @@
 2.  **创建 API 密钥文件**:
 
       - 在脚本所在的目录下，创建一个名为 `moonshot.txt` 的文本文件。
-      - 打开此文件，将您的 Moonshot API 密钥粘贴进去，然后保存。
+      - 打开此文件，将您的 [Moonshot API 密钥](https://platform.moonshot.cn/console/api-keys) 粘贴进去，然后保存。
 
     **注意**: 密钥文件中不应包含任何多余的空格或换行符。
 
