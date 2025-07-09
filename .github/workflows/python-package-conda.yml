@@ -39,7 +39,7 @@ jobs:
       # 第四步：使用 PyInstaller 打包成 .exe
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconfirm "InvoiceToCsvPy/InvoiceToCsvPy.py"
+          pyinstaller --onefile --noconfirm "InvoiceToCsvPy/InvoiceToCsvPy.py" --i "icon.ico"
         shell: pwsh
 
       # 第五步：在输出目录中创建额外的文件和文件夹
