@@ -1,9 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36221.1 d17.14
+VisualStudioVersion = 17.14.36221.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "InvoiceToCsvPy", "InvoiceToCsvPy\InvoiceToCsvPy.pyproj", "{0D74606D-14F3-4FDD-A085-AAF9C0A5A257}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InvoiceToCsvSharp", "InvoiceToCsvSharp\InvoiceToCsvSharp.csproj", "{C8398D5C-7B48-48D9-BFC5-12A6537ED00B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KimiUploadTest", "KimiUploadTest\KimiUploadTest.csproj", "{E8B21089-9423-4AF3-A99E-7A5404CEF72E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,6 +17,14 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{0D74606D-14F3-4FDD-A085-AAF9C0A5A257}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0D74606D-14F3-4FDD-A085-AAF9C0A5A257}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8398D5C-7B48-48D9-BFC5-12A6537ED00B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8398D5C-7B48-48D9-BFC5-12A6537ED00B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8398D5C-7B48-48D9-BFC5-12A6537ED00B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8398D5C-7B48-48D9-BFC5-12A6537ED00B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8B21089-9423-4AF3-A99E-7A5404CEF72E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8B21089-9423-4AF3-A99E-7A5404CEF72E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8B21089-9423-4AF3-A99E-7A5404CEF72E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8B21089-9423-4AF3-A99E-7A5404CEF72E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
