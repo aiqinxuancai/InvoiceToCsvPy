@@ -1,6 +1,6 @@
 # PDF 发票信息批量提取工具
 
-这是一个 Python 脚本，旨在自动化地从 PDF 格式的发票文件中提取关键信息，并将其整理到单个 CSV 文件中。该工具利用 [Moonshot AI (Kimi)](https://www.moonshot.cn/) 的强大文件读取和信息提取能力，能够高效处理大量发票。
+本工具由 Python 实现，旨在自动化地从 PDF 格式的发票文件中提取关键信息，并将其整理到单个 CSV 表格文件中，可进一步转换为Excel使用。该工具利用 [Moonshot AI (Kimi)](https://www.moonshot.cn/) 的强大文件读取和信息提取能力，能够高效处理大量发票。
 
 ## ✨ 主要功能
 
@@ -33,13 +33,7 @@
 
 5.  **运行脚本**:
 
-      - 打开终端（或命令提示符），进入脚本所在的目录，然后执行：
-
-    <!-- end list -->
-
-    ```bash
-    .\InvoiceToCsvPy.exe
-    ```
+      - 直接双击运行`InvoiceToCsvPy.exe`。
 
 脚本将开始处理 `invoices` 文件夹中的所有 PDF 文件。处理完成后，您会看到 "处理完成！" 的提示。
 
