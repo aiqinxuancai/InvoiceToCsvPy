@@ -1,6 +1,6 @@
 # .github/workflows/create-release.yml
 
-name: Build and Release Python Executable
+name: Build and Release C# AOT Executable
 
 # 工作流程触发器
 on:
@@ -21,29 +21,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 第二步：设置 Python 环境
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # 第二步：设置 .NET 环境
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          # 指定你项目所使用的 Python 版本
-          python-version: '3.12'
+          dotnet-version: '9.0.x'
 
-      # 第三步：安装依赖项
-      - name: Install dependencies
+      # 第三步：还原 NuGet 包
+      - name: Restore dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install openai
-          pip install pyinstaller
+          dotnet restore InvoiceToCsvSharp/InvoiceToCsvSharp.csproj
         shell: pwsh
 
-      # 第四步：使用 PyInstaller 打包成 .exe
-      - name: Build executable with PyInstaller
+      # 第四步：使用 AOT 编译并发布为单文件可执行程序
+      - name: Publish with AOT
         run: |
-          pyinstaller --onefile --noconfirm "InvoiceToCsvPy/InvoiceToCsvPy.py" --i "icon.ico"
+          dotnet publish InvoiceToCsvSharp/InvoiceToCsvSharp.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o dist
         shell: pwsh
 
       # 第五步：在输出目录中创建额外的文件和文件夹
-      # PyInstaller 默认将可执行文件输出到 dist 目录
       - name: Prepare Release Directory
         run: |
           New-Item -Path "dist/invoices" -ItemType Directory
@@ -53,7 +49,7 @@ jobs:
       # 第六步：打包发布内容为 ZIP 文件
       - name: Package Release Asset
         run: |
-          $asset_name = "InvoiceToCsvPy-windows-${{ github.ref_name }}.zip"
+          $asset_name = "InvoiceToCsvSharp-windows-${{ github.ref_name }}.zip"
           Compress-Archive -Path dist\* -DestinationPath $asset_name
           echo "ASSET_NAME=$asset_name" >> $env:GITHUB_ENV
         shell: pwsh
@@ -69,7 +65,7 @@ jobs:
           # Release 的描述内容
           body: |
             Automated release for version ${{ github.ref_name }}.
-            Contains the executable for Windows and necessary files.
+            Contains the C# AOT-compiled executable for Windows and necessary files.
         # GITHUB_TOKEN 是由 GitHub Actions 自动提供的，用于授权
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
