@@ -15,26 +15,26 @@ namespace InvoiceToCsvSharp.Utils
 {
     public class InvoiceProcessor
     {
-        // --- 配置区域 --- 
+        // --- 配置区域 ---
         private const string API_KEY_FILE = "moonshot.txt";
         private const string PDF_FOLDER_PATH = "./invoices";
         private const string CSV_OUTPUT_PATH = "invoices_data.csv";
+        private const string CLEAR_FOLDER_PATH = "./invoices_clear"; // 已处理文件存放文件夹
         private const int MAX_RETRIES = 3;
         private const int RETRY_DELAY = 2; // 秒
         private const string BUYER_FILE = "buyer.txt";
 
         // 多线程配置
-        private const int MAX_CONCURRENT_TASKS = 5; // 最大并发数
-        private const int API_RATE_LIMIT_DELAY_MS = 500; // API调用间隔（毫秒） 
+        private const int MAX_CONCURRENT_TASKS = 10; // 最大并发数（提高并发）
+        private const int API_CALL_DELAY_MS = 100; // API调用前的小延迟，避免瞬间突发（毫秒）
 
-        // --- 配置区域结束 --- 
+        // --- 配置区域结束 ---
 
         private MoonshotAIClient _client;
         private string _buyer;
 
         // 多线程相关
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(MAX_CONCURRENT_TASKS);
-        private readonly SemaphoreSlim _apiRateLimiter = new SemaphoreSlim(1, 1);
         private readonly object _consoleLock = new object();
         private readonly object _fileLock = new object();
         private int _processedCount = 0;
@@ -130,16 +130,22 @@ namespace InvoiceToCsvSharp.Utils
         }
 
         /// <summary>
-        /// 根据提取的数据重命名PDF文件（线程安全） 
+        /// 根据提取的数据复制PDF文件到invoices_clear文件夹并重命名（线程安全）
         /// </summary>
-        private void RenameSuccessfulPdf(string originalPath, InvoiceData data)
+        private void CopyToCleanFolder(string originalPath, InvoiceData data)
         {
             lock (_fileLock)
             {
                 try
                 {
+                    // 确保目标文件夹存在
+                    if (!Directory.Exists(CLEAR_FOLDER_PATH))
+                    {
+                        Directory.CreateDirectory(CLEAR_FOLDER_PATH);
+                        SafeConsoleWriteLine($"已创建文件夹: {CLEAR_FOLDER_PATH}", ConsoleColor.Green);
+                    }
+
                     var invoiceNum = data.InvoiceNumber ?? "N_A";
-                    var issueDate = data.IssueDate ?? "N_A";
                     var category = data.Category ?? "N_A";
                     var totalAmountStr = data.TotalAmount ?? "0";
 
@@ -147,29 +153,28 @@ namespace InvoiceToCsvSharp.Utils
                     int totalAmountInt = 0;
                     if (double.TryParse(totalAmountStr, out double totalAmount))
                     {
-                        totalAmountInt = (int)totalAmount;
+                        totalAmountInt = (int)Math.Round(totalAmount);
                     }
 
-                    // 构建新文件名并清理非法字符
-                    var newBaseName = $"{invoiceNum}-{issueDate}-{category}-{totalAmountInt}.pdf";
+                    // 构建新文件名：发票号码-类别-金额.pdf
+                    var newBaseName = $"{invoiceNum}-{category}-{totalAmountInt}.pdf";
                     var sanitizedName = SanitizeFilename(newBaseName);
 
-                    var dirName = Path.GetDirectoryName(originalPath);
-                    var newPath = Path.Combine(dirName, sanitizedName);
+                    var newPath = Path.Combine(CLEAR_FOLDER_PATH, sanitizedName);
 
                     // 检查新文件名是否已存在，避免覆盖
                     if (File.Exists(newPath))
                     {
-                        SafeConsoleWriteLine($"警告：重命名失败，文件 '{newPath}' 已存在。", ConsoleColor.Yellow);
+                        SafeConsoleWriteLine($"警告：复制失败，文件 '{newPath}' 已存在。", ConsoleColor.Yellow);
                         return;
                     }
 
-                    File.Move(originalPath, newPath);
-                    SafeConsoleWriteLine($"文件已成功重命名为: {sanitizedName}", ConsoleColor.Green);
+                    File.Copy(originalPath, newPath);
+                    SafeConsoleWriteLine($"文件已复制到: {CLEAR_FOLDER_PATH}/{sanitizedName}", ConsoleColor.Green);
                 }
                 catch (Exception e)
                 {
-                    SafeConsoleWriteLine($"警告：文件 '{Path.GetFileName(originalPath)}' 重命名失败: {e.Message}", ConsoleColor.Yellow);
+                    SafeConsoleWriteLine($"警告：文件 '{Path.GetFileName(originalPath)}' 复制失败: {e.Message}", ConsoleColor.Yellow);
                 }
             }
         }
@@ -198,62 +203,64 @@ namespace InvoiceToCsvSharp.Utils
                 {
                     try
                     {
-                        // 使用速率限制器控制API调用频率
-                        await _apiRateLimiter.WaitAsync();
-                        try
+                        // 添加小延迟避免瞬间突发请求
+                        if (API_CALL_DELAY_MS > 0)
                         {
-                            // 仅在第一次尝试时上传文件
-                            if (fileObject == null)
-                            {
-                                fileObject = await _client.UploadFileAsync(pdfPath);
-                            }
+                            await Task.Delay(API_CALL_DELAY_MS);
+                        }
 
-                            var fileContent = await _client.GetFileContentAsync(fileObject.id);
+                        // 仅在第一次尝试时上传文件
+                        if (fileObject == null)
+                        {
+                            fileObject = await _client.UploadFileAsync(pdfPath);
+                        }
 
-                            // 构建完整的提取信息Prompt
-                            var prompt = $@" 
-你是一个发票信息提取助手。请从下面的文本内容中提取结构化的发票信息，其中发票票种为""增值税电子普通发票""或""电子发票（普通发票）""。 
+                        var fileContent = await _client.GetFileContentAsync(fileObject.id);
 
-文件内容: 
---- 
-{fileContent} 
---- 
+                        // 构建完整的提取信息Prompt
+                        var prompt = $@"
+你是一个发票信息提取助手。请从下面的文本内容中提取结构化的发票信息，其中发票票种为""增值税电子普通发票""或""电子发票（普通发票）""。
 
-请严格按照以下JSON格式返回提取的信息，如果某个字段在文件中不存在，请用 ""N/A"" 表示。 
-{{ 
-    ""发票代码"": ""invoice_code"", 
-    ""发票号码"": ""invoice_number"", 
-    ""销方识别号"": ""seller_tax_id"", 
-    ""销方名称"": ""seller_name"", 
-    ""购方识别号"": ""buyer_tax_id"", 
-    ""购买方名称"": ""buyer_name"", 
-    ""开票日期"": ""issue_date"", 
-    ""项目名称"": ""item_name"", 
-    ""数量"": ""quantity"", 
-    ""金额"": ""amount"", 
-    ""税率"": ""tax_rate"", 
-    ""税额"": ""tax_amount"", 
-    ""价税合计"": ""total_amount"", 
-    ""发票票种"": ""invoice_type"", 
-    ""类别"": ""category"" 
-}} 
+文件内容:
+---
+{fileContent}
+---
 
-提取的例子： 
+请严格按照以下JSON格式返回提取的信息，如果某个字段在文件中不存在，请用 ""N/A"" 表示。
+{{
+    ""发票代码"": ""invoice_code"",
+    ""发票号码"": ""invoice_number"",
+    ""销方识别号"": ""seller_tax_id"",
+    ""销方名称"": ""seller_name"",
+    ""购方识别号"": ""buyer_tax_id"",
+    ""购买方名称"": ""buyer_name"",
+    ""开票日期"": ""issue_date"",
+    ""项目名称"": ""item_name"",
+    ""数量"": ""quantity"",
+    ""金额"": ""amount"",
+    ""税率"": ""tax_rate"",
+    ""税额"": ""tax_amount"",
+    ""价税合计"": ""total_amount"",
+    ""发票票种"": ""invoice_type"",
+    ""类别"": ""category""
+}}
+
+提取的例子：
 ```csv
 发票代码,发票号码,销方识别号,销方名称,购方识别号,购买方名称,开票日期,项目名称,数量,金额,税率,税额,价税合计,发票票种,类别
 ,24442000000657111111,91440812MAD2B8BJX7,湛江市西海岸西厨餐饮管理有限公司,91111111MA9W511111,广州咖喱网络科技有限公司,2024年12月30日,*餐饮服务*餐饮服务,1,109.9,1%,1.1,111,电子发票（普通发票）,餐饮服务
 044002301111,45311111,9144000061740323XQ,百胜餐饮（广东）有限公司,91111111MA9W511111,广州咖喱网络科技有限公司,2024年12月30日,*餐饮服务*餐饮服务,1,177.28,6%,10.64,187.92,增值税电子普通发票,餐饮服务
 
-{_buyer} 
+{_buyer}
 
 类别参考：餐饮服务,住宿服务,交通运输服务,居民日常服务,办公用品,电子设备,咨询服务,技术服务,租赁服务,建筑服务,医疗服务,教育服务,商品零售 等
 
-金额相关数值请不要带有货币符号，例如¥等。 
+金额相关数值请不要带有货币符号，例如¥等。
 
-注意不要搞反销售方和购买方信息。 
+注意不要搞反销售方和购买方信息。
 ";
 
-                            var messages = new List<MoonshotAIClient.ChatMessage>
+                        var messages = new List<MoonshotAIClient.ChatMessage>
                         {
                             new MoonshotAIClient.ChatMessage
                             {
@@ -267,25 +274,19 @@ namespace InvoiceToCsvSharp.Utils
                             }
                         };
 
-                            completion = await _client.CreateChatCompletionAsync(new MoonshotAIClient.ChatCompletionRequest
-                            {
-                                model = "kimi-k2-0905-preview", //"moonshot-v1-32k", 
-                                messages = messages,
-                                temperature = 0.0,
-                                response_format = new MoonshotAIClient.ResponseFormat { type = "json_object" }
-                            });
-
-                            completion.choices[0].message.content = completion.choices[0].message.content.Trim();
-
-                            SafeConsoleWriteLine($"[{index + 1}] API响应: {completion.choices[0].message.content}", ConsoleColor.Gray);
-                            SafeConsoleWriteLine($"[{index + 1}] API请求成功 (尝试 {attempt + 1}/{MAX_RETRIES})", ConsoleColor.Green);
-                            break; // 成功则跳出重试循环
-                        }
-                        finally
+                        completion = await _client.CreateChatCompletionAsync(new MoonshotAIClient.ChatCompletionRequest
                         {
-                            // 延迟释放，实现速率限制
-                            _ = Task.Delay(API_RATE_LIMIT_DELAY_MS).ContinueWith(_ => _apiRateLimiter.Release());
-                        }
+                            model = "kimi-k2-0905-preview", //"moonshot-v1-32k",
+                            messages = messages,
+                            temperature = 0.0,
+                            response_format = new MoonshotAIClient.ResponseFormat { type = "json_object" }
+                        });
+
+                        completion.choices[0].message.content = completion.choices[0].message.content.Trim();
+
+                        SafeConsoleWriteLine($"[{index + 1}] API响应: {completion.choices[0].message.content}", ConsoleColor.Gray);
+                        SafeConsoleWriteLine($"[{index + 1}] API请求成功 (尝试 {attempt + 1}/{MAX_RETRIES})", ConsoleColor.Green);
+                        break; // 成功则跳出重试循环
                     }
                     catch (Exception e)
                     {
@@ -327,10 +328,10 @@ namespace InvoiceToCsvSharp.Utils
                     var extractedData = JsonConvert.DeserializeObject<InvoiceData>(completion.choices[0].message.content);
                     SafeConsoleWriteLine($"[{index + 1}] API响应解析成功。", ConsoleColor.Green);
 
-                    // 成功提取数据后，重命名文件
-#if !DEBUG
-RenameSuccessfulPdf(pdfPath, extractedData); 
-#endif
+                    // 成功提取数据后，复制文件到invoices_clear文件夹
+
+                    CopyToCleanFolder(pdfPath, extractedData);
+
 
                     // 更新进度
                     var processed = Interlocked.Increment(ref _processedCount);
@@ -348,16 +349,6 @@ RenameSuccessfulPdf(pdfPath, extractedData);
             {
                 _semaphore.Release();
             }
-        }
-
-        /// <summary>
-        /// 处理一批文件
-        /// </summary>
-        private async Task<List<InvoiceData>> ProcessBatchAsync(List<(string path, int index)> batch)
-        {
-            var tasks = batch.Select(item => ExtractInvoiceInfoFromPdfAsync(item.path, item.index));
-            var results = await Task.WhenAll(tasks);
-            return results.ToList();
         }
 
         /// <summary>
@@ -401,27 +392,10 @@ RenameSuccessfulPdf(pdfPath, extractedData);
             SafeConsoleWriteLine($"使用 {MAX_CONCURRENT_TASKS} 个并发任务开始处理...", ConsoleColor.Green);
             SafeConsoleWriteLine(new string('-', 50));
 
-            // 使用线程安全的集合来收集结果
-            var allData = new ConcurrentBag<InvoiceData>();
+            // 创建所有任务并发执行（由Semaphore控制实际并发数）
             var indexedFiles = pdfFiles.Select((path, index) => (path, index)).ToList();
-
-            // 分批处理文件
-            var batches = new List<List<(string path, int index)>>();
-            for (int i = 0; i < indexedFiles.Count; i += MAX_CONCURRENT_TASKS)
-            {
-                var batch = indexedFiles.Skip(i).Take(MAX_CONCURRENT_TASKS).ToList();
-                batches.Add(batch);
-            }
-
-            // 处理所有批次
-            foreach (var batch in batches)
-            {
-                var batchData = await ProcessBatchAsync(batch);
-                foreach (var data in batchData)
-                {
-                    allData.Add(data);
-                }
-            }
+            var tasks = indexedFiles.Select(item => ExtractInvoiceInfoFromPdfAsync(item.path, item.index));
+            var allData = await Task.WhenAll(tasks);
 
             // 按原始顺序排序（如果需要） 
             var sortedData = allData.OrderBy(x => x.InvoiceNumber).ToList();
